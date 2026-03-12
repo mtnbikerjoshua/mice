@@ -113,13 +113,8 @@ sampler <- function(data, m, ignore, where, imp, blocks, method,
             }
           }
 
-          # Success row plus any events from updateLog() during the cycle
-          log.entry <- data.frame(
-            it   = k, im   = i, dep  = "cycle", meth = NA_character_,
-            out  = "success", msg  = "I1001", fn   = "one.cycle",
-            stringsAsFactors = FALSE
-          )
-          worker_log <- if (nrow(logenv$log) > 0) rbind(log.entry, logenv$log) else log.entry
+          # Only event rows from updateLog(); do not save a success row to loggedEvents
+          worker_log <- logenv$log
           logfile <- file.path(logdir, sprintf("log_it%02d_im%02d.rds", k, i))
           saveRDS(worker_log, file = logfile)
 
