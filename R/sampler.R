@@ -64,13 +64,21 @@ sampler <- function(data, m, ignore, where, imp, blocks, method,
 
       } else {
         # parallel processing with future.apply
+        # Use main process tempdir so workers write logs where collect_logs() will look
+        logdir <- tempdir()
         results_i <- future.apply::future_lapply(seq_len(m), function(i) {
-          emit_worker_log <- function(log_entry, file) {
-            saveRDS(log_entry, file = file)
-          }
-
           data_i <- data
           imp_i <- imp
+
+          # Worker-local logenv for updateLog() when state/loggedEvents not in search path
+          logenv <- new.env()
+          logenv$state <- list(it = k, im = i, dep = "", meth = "", log = TRUE)
+          logenv$log <- data.frame(
+            it = integer(), im = integer(), dep = character(), meth = character(),
+            out = character(), msg = character(), fn = character(),
+            stringsAsFactors = FALSE
+          )
+          assign(".logenv", logenv, envir = .GlobalEnv)
 
           # loop over blocks
           for (h in visitSequence) {
@@ -86,7 +94,7 @@ sampler <- function(data, m, ignore, where, imp, blocks, method,
                               blocks, method, calltypes, formulas,
                               predictorMatrix, blots,
                               tasks, models,
-                              post, ignore, printFlag = FALSE, p, ...)
+                              post, ignore, printFlag = FALSE, p, ..., logenv = logenv)
 
           data_i <- result$data
           imp_i <- result$imp
@@ -105,22 +113,24 @@ sampler <- function(data, m, ignore, where, imp, blocks, method,
             }
           }
 
-          # Create a log record
+          # Success row plus any events from updateLog() during the cycle
           log.entry <- data.frame(
             it   = k, im   = i, dep  = "cycle", meth = NA_character_,
             out  = "success", msg  = "I1001", fn   = "one.cycle",
             stringsAsFactors = FALSE
           )
-
-          logfile <- file.path(tempdir(), sprintf("log_it%02d_im%02d.rds", k, i))
-          emit_worker_log(log.entry, logfile)
+          worker_log <- if (nrow(logenv$log) > 0) rbind(log.entry, logenv$log) else log.entry
+          logfile <- file.path(logdir, sprintf("log_it%02d_im%02d.rds", k, i))
+          saveRDS(worker_log, file = logfile)
 
           list(imp = imp_i, mean = mean_i, var = var_i)
         },
         future.packages = future.packages,
         future.globals = list(initialize.chain = initialize.chain,
                               one.cycle = one.cycle,
-                              get.chain.stats = get.chain.stats),
+                              get.chain.stats = get.chain.stats,
+                              logdir = logdir,
+                              k = k),
         future.seed = future.seed)
 
         # Combine with existing log if needed
@@ -167,7 +177,7 @@ sampler <- function(data, m, ignore, where, imp, blocks, method,
 
 one.cycle <- function(data, imp, r, where, i, k, visitSequence,
                       blocks, method, calltypes, formulas, predictorMatrix,
-                      blots, tasks, models, post, ignore, printFlag, p, ...) {
+                      blots, tasks, models, post, ignore, printFlag, p, ..., logenv = NULL) {
   # this function makes one pass through the data
 
   # impute block-by-block
@@ -195,6 +205,7 @@ one.cycle <- function(data, imp, r, where, i, k, visitSequence,
         class = if (printFlag) "sticky")
       
       for (j in b) {
+        if (!is.null(logenv)) logenv$state <- list(it = k, im = i, dep = j, meth = theMethod, log = TRUE)
         # miceadds support
         newstate <- list(it = k, im = i, dep = j, meth = theMethod)
         # if m outruns m.train, recycle m.train
@@ -231,7 +242,7 @@ one.cycle <- function(data, imp, r, where, i, k, visitSequence,
     if (mult) {
       # Advance the progress bar
       p()
-      
+      if (!is.null(logenv)) logenv$state <- list(it = k, im = i, dep = b, meth = theMethod, log = TRUE)
       # miceadds support
       newstate <- list(it = k, im = i, dep = b, meth = theMethod)
       mis <- !r
@@ -260,7 +271,7 @@ one.cycle <- function(data, imp, r, where, i, k, visitSequence,
     if (pass) {
       # Advance the progress bar
       p()
-      
+      if (!is.null(logenv)) logenv$state <- list(it = k, im = i, dep = b, meth = theMethod, log = TRUE)
       for (j in b) {
         # miceadds support
         newstate <- list(it = k, im = i, dep = b, meth = theMethod)

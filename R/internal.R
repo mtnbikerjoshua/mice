@@ -40,9 +40,32 @@ find.collinear <- function(x, threshold = 0.999, ...) {
 }
 
 updateLog <- function(out = NULL, meth = NULL, msg = NULL, fn = NULL, frame = 1) {
-  pos_state <- ma_exists("state", frame)$pos
-  pos_loggedEvents <- ma_exists("loggedEvents", frame)$pos
+  state_exists <- ma_exists("state", frame)
 
+  if (!state_exists$is_there) {
+    logenv <- tryCatch(get(".logenv", envir = .GlobalEnv), error = function(e) NULL)
+    if (is.environment(logenv) && exists("state", envir = logenv, inherits = FALSE)) {
+      s <- get("state", envir = logenv, inherits = FALSE)
+      rec <- data.frame(
+        it   = s$it,
+        im   = s$im,
+        dep  = s$dep,
+        meth = if (is.null(meth)) s$meth else meth,
+        out  = if (is.null(out)) "" else out,
+        msg  = if (is.null(msg)) NA_character_ else msg,
+        fn   = if (is.null(fn)) as.character(sys.call(-1)[1]) else as.character(fn),
+        stringsAsFactors = FALSE
+      )
+      logenv$log <- rbind(logenv$log, rec)
+      s$log <- TRUE
+      assign("state", s, envir = logenv)
+      return(invisible(NULL))
+    }
+    stop("object 'state' not found")
+  }
+
+  pos_state <- state_exists$pos
+  pos_loggedEvents <- ma_exists("loggedEvents", frame)$pos
   s <- get("state", pos_state)
   r <- get("loggedEvents", pos_loggedEvents)
 
