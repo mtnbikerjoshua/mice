@@ -319,9 +319,9 @@ remove.lindep <- function(x, y, ry, eps = 1e-04, maxcor = 0.99,
 
   # correlation between x's
   cx <- cor(xobs[, cols, drop = FALSE], use = use2)
-  na_cols <- apply(cx, 2, anyNA)
-  cols[cols][na_cols] <- FALSE
-  cx <- cx[!na_cols, !na_cols, drop = FALSE]
+  cx[is.na(cx)] <- 0
+  diag(cx) <- 1
+
   eig <- eigen(cx, symmetric = TRUE)
   ncx <- cx
   while (eig$values[k] / eig$values[1] < abs(eps)) {
